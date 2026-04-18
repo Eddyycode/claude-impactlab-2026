@@ -50,7 +50,7 @@ watch(messages, async () => {
         :class="msg.role"
       >
         <div class="message-bubble">
-          <p class="content" v-html="msg.content"></p>
+          <div class="content" v-html="msg.content"></div>
         </div>
 
         <!-- Report block -->
@@ -266,6 +266,90 @@ watch(messages, async () => {
 }
 
 .content { margin: 0; }
+
+/* ── Markdown-rendered content inside bubbles ── */
+.content :deep(h1),
+.content :deep(h2),
+.content :deep(h3) {
+  margin: 14px 0 8px 0;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.3;
+}
+.content :deep(h2) { font-size: 1.05rem; }
+.content :deep(h3) { font-size: 0.98rem; }
+.content :deep(h1:first-child),
+.content :deep(h2:first-child),
+.content :deep(h3:first-child) { margin-top: 0; }
+
+.content :deep(p) {
+  margin: 0 0 10px 0;
+  line-height: 1.55;
+}
+.content :deep(p:last-child) { margin-bottom: 0; }
+
+.content :deep(strong) { font-weight: 700; color: #111827; }
+.content :deep(em)     { font-style: italic; color: #4b5563; }
+
+.content :deep(ul),
+.content :deep(ol) {
+  margin: 8px 0 12px 0;
+  padding-left: 22px;
+}
+.content :deep(li)     { margin-bottom: 4px; line-height: 1.5; }
+
+.content :deep(hr) {
+  border: none;
+  border-top: 1px solid #1a1a1a20;
+  margin: 14px 0;
+}
+
+.content :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 0.88rem;
+  background: rgba(255,255,255,0.5);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.content :deep(th),
+.content :deep(td) {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid #1a1a1a15;
+}
+.content :deep(th) {
+  background: rgba(249, 115, 22, 0.08);
+  font-weight: 700;
+  color: #111827;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.content :deep(tr:last-child td) { border-bottom: none; }
+
+.content :deep(code) {
+  background: rgba(17,24,39,0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.88em;
+}
+.content :deep(blockquote) {
+  margin: 10px 0;
+  padding: 6px 14px;
+  border-left: 3px solid #f97316;
+  background: rgba(249,115,22,0.06);
+  color: #4b5563;
+  border-radius: 0 6px 6px 0;
+}
+
+/* Burbujas del user: invertir paleta porque fondo es naranja */
+.user .content :deep(h1),
+.user .content :deep(h2),
+.user .content :deep(h3),
+.user .content :deep(strong) { color: white; }
 
 /* ── Typing dots ── */
 .typing-indicator {
