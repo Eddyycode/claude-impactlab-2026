@@ -20,6 +20,7 @@ import json
 import os
 import asyncio
 from datetime import date
+from typing import Optional, List, Tuple
 from dotenv import load_dotenv
 
 from fastapi import FastAPI
@@ -65,12 +66,12 @@ app.add_middleware(
 class Message(BaseModel):
     role: str
     content: str
-    reportData: dict | None = None
+    reportData: Optional[dict] = None
 
 
 class ChatRequest(BaseModel):
-    messages: list[Message]
-    preferences: dict | None = None
+    messages: List[Message]
+    preferences: Optional[dict] = None
 
 
 # ─── System prompt ──────────────────────────────────────────────────────────
@@ -223,7 +224,7 @@ def process_report(args: dict, preferences: dict | None) -> dict:
 
 
 # ─── Tool dispatch ──────────────────────────────────────────────────────────
-async def dispatch_tool(name: str, args: dict, preferences: dict | None) -> tuple[str, dict | None]:
+async def dispatch_tool(name: str, args: dict, preferences: Optional[dict]) -> Tuple[str, Optional[dict]]:
     """
     Ejecuta una tool y devuelve (result_text, report_data_or_none).
     """
@@ -240,9 +241,9 @@ async def dispatch_tool(name: str, args: dict, preferences: dict | None) -> tupl
 
 # ─── Claude tool-use loop ───────────────────────────────────────────────────
 async def run_claude_loop(
-    user_messages: list[dict],
-    preferences: dict | None,
-) -> tuple[str, dict | None]:
+    user_messages: List[dict],
+    preferences: Optional[dict],
+) -> Tuple[str, Optional[dict]]:
     """
     Ejecuta el loop de tool-use de Claude.
     Devuelve (texto_respuesta, report_data_or_none).
