@@ -588,3 +588,194 @@ Revisar esta propuesta, decidir si nos vamos por este camino, y si sí:
 2. Borrar la sección de scripts de ingesta `02_*` a `07_*` del CLAUDE.md.
 3. Agregar `mcp cesar/` al §"Comandos de desarrollo" con el `uv sync` + smoke test.
 4. Crear `DATASET_SLUGS.md` vacío (se llena durante el evento).
+
+---
+
+## Plan de desarrollo — 2 devs, cero merge conflicts
+
+Somos 2 devs. **Dev A** (tú) = backend, MCP, gateway, datos, scoring.
+**Dev B** (tu compañero) = frontend Vue, UX, mapa, demo.
+
+Estrategia: dividir por **directorios de forma estricta**. Cada dev toca solo
+lo suyo y se comunican a través de un **contrato de API congelado** al inicio.
+Con esta disciplina, `git merge` nunca genera conflictos — porque nunca editan
+los mismos archivos.
+
+### Matriz de propiedad (la regla de oro)
+
+| Archivo / directorio | Dueño | ¿El otro dev puede tocarlo? |
+|---|---|---|
+| `frontend/**` | **Dev B** | Nunca. Ni un CSS. |
+| `gateway/**` | **Dev A** | Nunca. |
+| `data_ingestion/**` | **Dev A** | Nunca. |
+| `mcp cesar/` (submódulo) | **Dev A** — solo setup | Nadie edita su contenido |
+| `.env.backend.example` | **Dev A** | No |
+| `.env.frontend.example` | **Dev B** | No |
+| `.gitignore` | **Dev A** | Dev B avisa por chat antes de tocarlo |
+| `.gitmodules` | **Dev A** | No |
+| `DATASET_SLUGS.md` | **Dev A** | No |
+| `API_CONTRACT.md` | **Dev A**, pair-editado con Dev B en el kickoff | Solo en checkpoints |
+| `CLAUDE.md` · `PROPUESTA.md` | Rotativo, solo en checkpoints | Nunca durante la misma hora |
+| `README.md` | Se crea al final, Dev A | — |
+| `.env` (local, no se commitea) | Cada dev el suyo | — |
+
+**Regla:** si una tarea requiere editar un archivo del otro dueño, la hace ese dev.
+Sin atajos. Sin "solo cambio una línea".
+
+> **Truco para `.env.example`:** en vez de un solo archivo compartido, se crean
+> **dos** (`.env.backend.example` y `.env.frontend.example`). Cada dev el suyo,
+> cero conflicto. Al final se concatenan en un único `.env.example` en el freeze.
+
+### Archivo de contrato — la única dependencia entre los dos
+
+Crear `gateway/API_CONTRACT.md` (owned by Dev A) **en el kickoff (minuto 30)**.
+Pair-editado 15 min con Dev B presente. Define:
+
+1. **Request shape** de `POST /chat`:
+   ```json
+   {
+     "messages": [{"role": "user", "content": "..."}, ...],
+     "preferences": {
+       "idioma": "es",
+       "prioridad_weights": { "seguridad": 30, "agua": 25 }
+     }
+   }
+   ```
+2. **Response shape** — ver §"Shape de respuesta de `generate_report`".
+3. **IDs canónicos de dimensión**: `seguridad`, `aire`, `sismico`, `inundacion`,
+   `agua`, `transporte`, `integridad_2017`, `servicios`, `ecobici`.
+4. **Fixture JSON completo de Narvarte Poniente** — Dev B lo usa como mock
+   mientras Dev A construye el gateway.
+
+Una vez congelado: **no se cambia sin aviso explícito.** Si Dev A necesita
+cambiarlo, avisa por chat, Dev B hace `git pull` y actualiza mocks.
+
+### Git workflow
+
+- `main` siempre funcional. Nadie rompe `main`.
+- Cada dev en su rama: `dev-a/<feature>` y `dev-b/<feature>`.
+- **Rebase contra `main` al inicio de cada hora**:
+  ```bash
+  git fetch origin
+  git rebase origin/main
+  ```
+- Merge a `main` vía PR del dueño. Sin revisión cruzada — confiar en la división.
+- **Prohibido** `git push --force` en `main`.
+- Usar siempre `git rebase`, nunca `git merge origin/main` — historial lineal.
+- Commits frecuentes (cada 30 min idealmente). Mensajes cortos en presente:
+  `feat: add geocode tool`, `fix: transit radius query`.
+
+### Timeline (6 horas del evento)
+
+#### Pre-evento (noche anterior, ~1h cada uno, en paralelo)
+
+**Dev A**
+- `git submodule update --init --recursive`
+- `cd "mcp cesar" && uv sync && uv run python tests/smoke_test.py` → `smoke: OK`
+- Crear proyecto Supabase free tier · habilitar PostGIS · correr `setup_schema.sql`
+- Descargar GTFS de `datos.cdmx.gob.mx/dataset/gtfs` · extraer `stops.txt` a `data_ingestion/raw/`
+- Con el MCP corriendo: `list_datasets(search="sismico")`, `search="inundacion"`,
+  `search="agua"`, `search="2017"` — apuntar los slugs reales en `DATASET_SLUGS.md`
+- (Opcional) Conseguir `INEGI_TOKEN` para DENUE
+
+**Dev B**
+- `npm create vue@latest frontend`
+- `cd frontend && npm install axios leaflet @vue-leaflet/vue-leaflet`
+- `npm run dev` levanta en localhost:5173 sin errores
+- Commit del scaffold limpio a `main`
+- Crear `.env` local con `VITE_GATEWAY_URL=http://localhost:8000` y `VITE_MOCK=1`
+
+#### Hora 0:00 — 🔁 Kickoff juntos (30 min)
+
+1. Sync rápido: ambos confirman checklist pre-evento verde.
+2. **Pair-edit `API_CONTRACT.md`** (20 min). Se congela al final.
+3. Dev A commitea el contract. Dev B hace `git pull` y arranca con mocks.
+
+#### Hora 0:30 → 2:00 — Construcción en paralelo (90 min, aislada)
+
+**Dev A — backend**
+1. `gateway/requirements.txt` · `gateway/pyproject.toml`.
+2. `gateway/mcp_client.py` — cliente stdio que levanta `cdmx-mcp`.
+3. `gateway/tool_registry.py` — une tools remotas + locales.
+4. `gateway/tools/geocode.py` — Nominatim con cache en memoria.
+5. `gateway/main.py` — `POST /chat` con lifespan que inicia el MCP.
+6. `curl -X POST /chat` con una pregunta real responde correctamente.
+
+**Dev B — frontend (todo con mocks)**
+1. `frontend/src/composables/useChat.js` — llama a `/chat` (o devuelve fixture si `VITE_MOCK=1`).
+2. `frontend/src/composables/useReport.js` — estado del reporte.
+3. `frontend/src/components/ChatInterface.vue` — input + historial.
+4. `frontend/src/components/ScoreCard.vue` — escala 1–10 (snippet en §"ScoreCard.vue").
+5. Vista funcional con el fixture de Narvarte Poniente — **sin backend real todavía**.
+
+#### Hora 2:00 — 🔁 Checkpoint (15 min)
+
+- Dev A hace `curl` en vivo al `/chat`: respuesta matchea el contract.
+- Dev B apaga el mock (`VITE_MOCK=0`) y pregunta desde el browser.
+- La respuesta real llega y se renderiza. Si no: **se ajusta el código, no el contract.**
+- Si Dev A está atrasado: Dev B sigue con mocks. No se bloquea.
+
+#### Hora 2:15 → 4:00 — Completar features
+
+**Dev A**
+1. `gateway/tools/transit.py` — `stations_within_radius` via Supabase PostGIS.
+2. Módulo de scoring: las 9 fórmulas de §"Las 9 dimensiones" normalizadas a 1–10.
+3. `gateway/tools/report.py` — `generate_report()` con Jinja2 para el HTML.
+4. System prompt final + enforcement de `generate_report` al cierre.
+5. Manejo de `faltantes` + renormalización de pesos.
+
+**Dev B**
+1. `frontend/src/components/RiskMap.vue` — Leaflet con marcador en lat/lng.
+2. `frontend/src/components/ReportViewer.vue` — `v-html` del reporte HTML.
+3. Capas de riesgo sobre el mapa (polígonos de zona sísmica) — si hay tiempo.
+4. CSS global: paleta de colores de §"Etiqueta y color por score", tipografía.
+
+#### Hora 4:00 — 🔁 Checkpoint (15 min)
+
+- Demo end-to-end en vivo: Dev B pregunta en Vue, respuesta trae 7+ dimensiones
+  con scores 1–10 + reporte HTML + mapa con marcador.
+- Si alguna tool no funciona: **se corta**. 5 dimensiones sólidas > 9 flojas.
+- Decidir si hay tiempo para el wow factor (capas de mapa, pesos personalizables UI).
+
+#### Hora 4:15 → 5:00 — Pulir
+
+**Dev A**
+1. Errores robustos: cada tool fallida va a `faltantes` con motivo legible.
+2. Aplicar `preferences.prioridad_weights` en el cálculo global.
+3. Respuesta amigable para alcaldías fuera de scope (CUA, BJ, COY).
+4. Backup de la DB Supabase (Dashboard → Database → Backups).
+
+**Dev B**
+1. `frontend/demo-questions.md` con 3 preguntas de demo (owned by Dev B).
+2. Ensayar las 3 preguntas en el browser — ninguna debe fallar.
+3. `npm run build` verifica que el bundle carga sin errores.
+4. Layout final pulido.
+
+#### Hora 5:00 — 🛑 FREEZE
+
+- **Nadie commitea nuevas features.** Solo fixes críticos del demo.
+- Merge de ramas a `main`. Dev A primero, Dev B después.
+- `git log --oneline` limpio. Conflicto → `git rebase --abort` y resincronizar por chat.
+
+#### Hora 5:00 → 6:00 — Ensayo + pitch
+
+- 2 corridas completas de las 3 preguntas de demo. Timer a 3 min exactos.
+- **Dev A** narra arquitectura (30s): "MCP server abierto → gateway FastAPI → scoring → Claude API".
+- **Dev B** maneja el laptop y demuestra (90s).
+- Problema (30s) e impacto (30s) los dicen alternados.
+
+### Reglas anti-bloqueo
+
+1. **Si Dev A se atrasa, Dev B NUNCA espera.** Usa los mocks del contract.
+2. **Si una tool tarda > 30 min en integrarse, Dev A la corta.** 5 funcionando > 9 rotas.
+3. **Claude Code es el tercer integrante.** Generar scaffolds, normalizadores, componentes — no escribir boilerplate a mano.
+4. **Nunca demostrar algo no probado 3 veces.**
+5. **Cambios al contract = aviso explícito por chat + `git pull` inmediato.**
+6. **El mapa es opcional, el chat no.** Si faltan 30 min, corta el mapa.
+7. **No abrir el laptop del otro.** Nunca. El checkpoint es el único momento presencial.
+
+### Canal de comunicación
+
+- **Chat (WhatsApp/Slack):** cambios al contract, avisos de merge a `main`, pedir ayuda.
+- **Presencial (checkpoints cada hora):** sync de status, demo en vivo, decisiones de scope.
+- Fuera de esos dos canales, cada uno trabaja en su directorio en silencio.
