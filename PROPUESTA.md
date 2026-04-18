@@ -289,6 +289,225 @@ Reglas:
 
 ---
 
+## Sistema de calificación 1–10 (consulta por colonia/dirección)
+
+Cada vez que un usuario final consulta una nueva dirección o colonia, el agente
+devuelve un set de **9 métricas normalizadas en escala 1–10** (10 = mejor para
+vivir, 1 = peor), una por dimensión urbana, **más un score global ponderado**.
+Toda métrica se deriva de **datos abiertos de gobierno** (CKAN CDMX, SIMAT,
+GTFS, GBFS ECOBICI, DENUE INEGI) — nunca de estimaciones, scraping o inferencia.
+
+> **⚠ Cambio de convención.** El `CLAUDE.md` original usaba una escala 1–3
+> donde **1 era mejor** (bajo riesgo). Esta propuesta la reemplaza por 1–10
+> donde **10 es mejor** (mejor para vivir). Al actualizar `ScoreCard.vue` hay
+> que invertir la lógica de color y etiquetas — el snippet actualizado está
+> más abajo.
+
+### Las 9 dimensiones evaluadas
+
+| # | Dimensión | Tool / fuente de gobierno | Insumo numérico | Fórmula → 1–10 |
+|---|---|---|---|---|
+| 1 | **Seguridad** | `crime_hotspots` · FGJ CDMX | delitos por 1000 hab en últimos 12 meses (colonia) | 10 si ≤ p10 CDMX · 1 si ≥ p90 · lineal entre percentiles |
+| 2 | **Calidad del aire** | `air_quality_now` · SIMAT | PM2.5 promedio 7 días (µg/m³) en estación más cercana | 10 si ≤ 12 · 5 si 25 · 1 si ≥ 55 (referencia OMS) |
+| 3 | **Riesgo sísmico** | `query_records("atlas-riesgo-sismico")` · Atlas de Riesgo CDMX | zona sísmica (I / II / III) | 10 zona I · 6 zona II · 2 zona III — resta 2 si cae en polígono 2017 |
+| 4 | **Riesgo de inundación** | `query_records("atlas-riesgo-inundaciones")` · Atlas de Riesgo CDMX | nivel (bajo / medio / alto / muy alto) | 10 / 7 / 4 / 1 respectivamente |
+| 5 | **Confiabilidad del agua** | `query_records("reportes-de-agua")` · SACMEX | # reportes por 1000 hab en 6 meses (colonia) | 10 si ≤ p10 · 1 si ≥ p90 · lineal |
+| 6 | **Acceso a transporte** | `get_transit_access` (local) · GTFS CDMX | # estaciones en 800 m ponderadas por modo | Metro ×3 · Metrobús ×2 · RTP/Trolebús/Cablebús ×1 · tope 10 |
+| 7 | **Integridad estructural 2017** | `query_records("inmuebles-danados-2017")` · Plataforma CDMX | # inmuebles afectados en radio 300 m | parte de 10 y resta 1 por inmueble (piso 1) · solo puede bajar el score |
+| 8 | **Servicios cercanos** | `denue_near` · DENUE (INEGI) | cobertura de 4 categorías (súper, farmacia, escuela, hospital) en 800 m | 2.5 pts por categoría cubierta · tope 10 |
+| 9 | **Movilidad ECOBICI** | `ecobici_status` · GBFS ECOBICI | # cicloestaciones en 500 m | 0→1 · 1→4 · 2→6 · 3→8 · ≥4→10 |
+
+> **Core vs. enrichment.** Dimensiones 1–7 son **obligatorias** — si alguna falla
+> se reporta como faltante pero sigue intentándose. Dimensiones 8 y 9 son
+> enriquecimiento: si DENUE no tiene token o ECOBICI falla, se omiten sin drama.
+
+### Score global ponderado
+
+```
+score_global = Σ (peso_i × score_i) / Σ pesos_activos
+```
+
+**Pesos default** (suman 100, calibrados para CDMX post-2017):
+
+| Dimensión | Peso default |
+|---|---|
+| Seguridad | 20 |
+| Riesgo sísmico | 18 |
+| Confiabilidad del agua | 14 |
+| Acceso a transporte | 14 |
+| Calidad del aire | 12 |
+| Riesgo de inundación | 8 |
+| Integridad estructural 2017 | 8 |
+| Servicios cercanos | 4 |
+| ECOBICI | 2 |
+
+### Personalización por usuario
+
+El payload de `POST /chat` ya admite `preferences`. Se extiende para aceptar
+pesos del usuario:
+
+```json
+{
+  "messages": [...],
+  "preferences": {
+    "idioma": "es",
+    "prioridad_weights": {
+      "seguridad": 30,
+      "agua": 25,
+      "transporte": 20
+    }
+  }
+}
+```
+
+Reglas de aplicación:
+- Los pesos del usuario **reemplazan** los default de las dimensiones que menciona.
+- Las dimensiones no mencionadas conservan su peso default.
+- Al final se **renormaliza** para que la suma de pesos activos sea 100.
+- Si una dimensión no se pudo calcular, su peso se redistribuye entre las demás.
+
+### Etiqueta y color por score
+
+| Score | Etiqueta | Color | Semántica |
+|---|---|---|---|
+| 8.5–10.0 | Excelente | verde oscuro `#15803d` | Recomendado sin reservas |
+| 7.0–8.4 | Bueno | verde `#22c55e` | Buena opción para vivir |
+| 5.5–6.9 | Aceptable | amarillo `#f59e0b` | Revisa los tradeoffs |
+| 4.0–5.4 | Preocupante | naranja `#f97316` | Solo con razón de peso |
+| 1.0–3.9 | Evitar | rojo `#ef4444` | No recomendado |
+
+### Shape de respuesta de `generate_report`
+
+```python
+def generate_report(direccion, scores, resumen):
+    """
+    scores: {
+      "global": 7.3,
+      "etiqueta_global": "Bueno",
+      "dimensiones": [
+        {
+          "id": "seguridad",
+          "nombre": "Seguridad",
+          "score": 6.2,
+          "peso_aplicado": 20,
+          "fuente": "FGJ CDMX — carpetas de investigación",
+          "dataset_id": "fgj",
+          "consultado_en": "2026-04-18",
+          "dato_bruto": "48 delitos / 1000 hab últimos 12m",
+          "detalle": "Tendencia estable vs. trimestre previo"
+        },
+        ...
+      ],
+      "faltantes": [
+        {"id": "ecobici", "razon": "GBFS feed sin estaciones en 500 m"}
+      ]
+    }
+    """
+```
+
+### Reglas de transparencia (requisito del demo)
+
+1. **Cada métrica cita la fuente.** Nombre del dataset + fecha de consulta, al
+   lado del score. Sin eso, el score no se muestra.
+2. **Dato bruto antes que score.** El usuario ve "48 delitos/1000 hab" primero
+   y el "6.2/10" como síntesis. Nunca solo el score.
+3. **Dimensiones faltantes se listan** explícitamente en el reporte con el
+   motivo ("no hay estación SIMAT con datos recientes en 3 km").
+4. **Solo fuentes gubernamentales o estándares abiertos** — CKAN CDMX, SIMAT,
+   GTFS, GBFS ECOBICI, DENUE INEGI. Nada scrapeado ni inferido.
+5. **Claude nunca inventa números.** Si una tool devuelve vacío, la dimensión
+   entra a `faltantes`, no se estima.
+
+### ScoreCard.vue — actualizado a 1–10
+
+```vue
+<script setup>
+defineProps({
+  dimension: String,
+  score:     Number,    // 1.0–10.0
+  peso:      Number,    // 0–100 (peso aplicado tras renormalización)
+  fuente:    String,
+  consultadoEn: String, // YYYY-MM-DD
+  datoBruto: String,
+  detalle:   String,
+})
+
+const colorByScore = (s) =>
+  s >= 8.5 ? '#15803d' :
+  s >= 7.0 ? '#22c55e' :
+  s >= 5.5 ? '#f59e0b' :
+  s >= 4.0 ? '#f97316' : '#ef4444'
+
+const etiqueta = (s) =>
+  s >= 8.5 ? 'Excelente' :
+  s >= 7.0 ? 'Bueno' :
+  s >= 5.5 ? 'Aceptable' :
+  s >= 4.0 ? 'Preocupante' : 'Evitar'
+</script>
+
+<template>
+  <div class="score-card">
+    <header class="sc-header">
+      <p class="dimension">{{ dimension }}</p>
+      <span class="peso">Peso: {{ peso }}%</span>
+    </header>
+
+    <div class="score-row">
+      <span class="score" :style="{ color: colorByScore(score) }">
+        {{ score.toFixed(1) }}<small>/10</small>
+      </span>
+      <span class="badge" :style="{ background: colorByScore(score) }">
+        {{ etiqueta(score) }}
+      </span>
+    </div>
+
+    <p class="dato-bruto">{{ datoBruto }}</p>
+    <p class="detalle">{{ detalle }}</p>
+    <p class="fuente">
+      Fuente: {{ fuente }} · consulta {{ consultadoEn }}
+    </p>
+  </div>
+</template>
+```
+
+### Agregado al system prompt
+
+```
+Al terminar la evaluación de una dirección o colonia:
+
+- Cada dimensión debe tener un score numérico decimal entre 1.0 y 10.0
+  (10 = mejor para vivir, 1 = peor).
+- Cada dimensión debe declarar la fuente de gobierno (nombre del dataset
+  + fecha de consulta) en el campo `fuente`.
+- Calcula el score global como promedio ponderado usando los pesos default
+  o los enviados por el usuario en preferences.prioridad_weights.
+- Si una dimensión no se pudo calcular (tool vacía, dataset no cubre el
+  área, error), agrégala a `faltantes` con el motivo y renormaliza los
+  pesos restantes.
+- NUNCA inventes un número sin dato de gobierno detrás. Prefiere dejar
+  la dimensión en `faltantes` a estimar.
+```
+
+### Ejemplo de salida para el demo
+
+Consulta: *"¿Es buena zona para vivir la colonia Narvarte Poniente?"*
+
+```
+Score global: 7.6/10 — Bueno
+
+★ 7.8  Seguridad             (peso 20%) · FGJ CDMX · 2026-04-18
+★ 6.4  Calidad del aire      (peso 12%) · SIMAT · 2026-04-18
+★ 6.0  Riesgo sísmico        (peso 18%) · Atlas Riesgo CDMX · 2026-04-18
+★ 9.0  Riesgo de inundación  (peso  8%) · Atlas Riesgo CDMX · 2026-04-18
+★ 7.2  Agua                  (peso 14%) · SACMEX · 2026-04-18
+★ 9.5  Transporte            (peso 14%) · GTFS CDMX · 2026-04-18
+★ 8.0  Integridad 2017       (peso  8%) · Plataforma CDMX · 2026-04-18
+★ 7.5  Servicios cercanos    (peso  4%) · DENUE · 2026-04-18
+★ 6.0  ECOBICI               (peso  2%) · GBFS · 2026-04-18
+```
+
+---
+
 ## Checklist de setup del MCP (antes del evento)
 
 ```bash
