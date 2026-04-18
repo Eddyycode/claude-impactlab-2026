@@ -1,35 +1,75 @@
-@import './base.css';
+@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..800&display=swap');
 
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
+  background: #fafaf8;
+  color: #1a1a1a;
+}
+
+/* ─── Animated Background Bubbles ─── */
+.bubble-bg {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.bubble {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.45;
+  animation: bounce-bubble linear infinite;
+}
+
+.bubble-orange {
+  width: 420px;
+  height: 420px;
+  background: radial-gradient(circle at 40% 40%, #ff6a00, #ffffff);
+  animation-duration: 18s;
+  animation-name: bounce-orange;
+}
+
+.bubble-green {
+  width: 360px;
+  height: 360px;
+  background: radial-gradient(circle at 40% 40%, #22c55e, #ffffff);
+  animation-duration: 22s;
+  animation-name: bounce-green;
+}
+
+@keyframes bounce-orange {
+  0%   { transform: translate(0vw, 0vh); }
+  20%  { transform: translate(55vw, 10vh); }
+  40%  { transform: translate(60vw, 65vh); }
+  60%  { transform: translate(10vw, 70vh); }
+  80%  { transform: translate(5vw, 15vh); }
+  100% { transform: translate(0vw, 0vh); }
+}
+
+@keyframes bounce-green {
+  0%   { transform: translate(65vw, 60vh); }
+  25%  { transform: translate(5vw, 55vh); }
+  50%  { transform: translate(10vw, 5vh); }
+  75%  { transform: translate(65vw, 10vh); }
+  100% { transform: translate(65vw, 60vh); }
+}
+
+/* ─── Main layout ─── */
 #app {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  font-weight: normal;
-}
-
-a,
-.green {
-  text-decoration: none;
-  color: hsla(160, 100%, 37%, 1);
-  transition: 0.4s;
-  padding: 3px;
-}
-
-@media (hover: hover) {
-  a:hover {
-    background-color: hsla(160, 100%, 37%, 0.2);
-  }
-}
-
-@media (min-width: 1024px) {
-  body {
-    display: flex;
-    place-items: center;
-  }
-
-  #app {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    padding: 0 2rem;
-  }
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }

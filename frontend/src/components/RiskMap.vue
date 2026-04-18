@@ -66,9 +66,10 @@ watch(() => [props.lat, props.lng], ([newLat, newLng]) => {
   position: relative;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  margin-top: 16px;
-  background: #1e293b;
+  border: 1px solid #1a1a1a18;
+  margin-top: 0;
+  background: #e2e8f0;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
 
 .map-container {

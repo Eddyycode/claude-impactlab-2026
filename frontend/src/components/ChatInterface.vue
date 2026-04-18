@@ -12,36 +12,39 @@ const onSubmit = async () => {
   if (!userInput.value.trim() || isTyping.value) return;
   const text = userInput.value;
   userInput.value = '';
-  
   await sendMessage(text);
 };
 
-// Scroll to bottom when messages change
 watch(messages, async () => {
   await nextTick();
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
   }
 }, { deep: true });
-
 </script>
 
 <template>
   <div class="chat-interface">
     <div class="chat-messages" ref="messagesContainer">
+
+      <!-- Empty state -->
       <div v-if="messages.length === 0" class="empty-state">
-        <div class="icon-pulse"></div>
-        <h2>Analizador Urbano CDMX</h2>
-        <p>Escribe una colonia o dirección para conocer su calidad de vida objetiva basada en datos abiertos del gobierno.</p>
+        <div class="empty-icon">🏙️</div>
+        <h2>¿Dónde quieres vivir en <span class="accent-orange">CDMX</span>?</h2>
+        <p>
+          Escribe una colonia o dirección. Te doy un análisis de calidad de vida
+          basado en <strong>datos abiertos del gobierno</strong>.
+        </p>
         <div class="suggestions">
-          <button @click="userInput = 'Narvarte Poniente'; onSubmit()">Narvarte Poniente</button>
-          <button @click="userInput = 'Roma Norte'; onSubmit()">Roma Norte</button>
-          <button @click="userInput = 'Coyoacán Centro'; onSubmit()">Coyoacán Centro</button>
+          <button @click="userInput = 'Narvarte Poniente'; onSubmit()">🏘 Narvarte Poniente</button>
+          <button @click="userInput = 'Roma Norte'; onSubmit()">☕ Roma Norte</button>
+          <button @click="userInput = 'Coyoacán Centro'; onSubmit()">🌳 Coyoacán Centro</button>
         </div>
       </div>
 
-      <div 
-        v-for="(msg, idx) in messages" 
+      <!-- Messages -->
+      <div
+        v-for="(msg, idx) in messages"
         :key="idx"
         class="message-wrapper"
         :class="msg.role"
@@ -50,27 +53,35 @@ watch(messages, async () => {
           <p class="content" v-html="msg.content"></p>
         </div>
 
-        <!-- Render Report Data if available in message -->
+        <!-- Report block -->
         <div v-if="msg.reportData" class="report-container">
-          
+
+          <!-- Global score header -->
           <div class="global-score-bar">
-            <h3>{{ msg.reportData.direccion }}</h3>
+            <div class="gsb-left">
+              <span class="gsb-icon">📍</span>
+              <h3>{{ msg.reportData.direccion }}</h3>
+            </div>
             <div class="global-badge">
-              <strong>{{ msg.reportData.scores.global.toFixed(1) }}</strong> / 10
-              <span>{{ msg.reportData.scores.etiqueta_global }}</span>
+              <strong>{{ msg.reportData.scores.global.toFixed(1) }}</strong>
+              <span class="badge-sep">/10</span>
+              <span class="badge-label">{{ msg.reportData.scores.etiqueta_global }}</span>
             </div>
           </div>
 
-          <RiskMap 
+          <!-- Map -->
+          <RiskMap
             v-if="msg.reportData.lat && msg.reportData.lng"
-            :lat="msg.reportData.lat" 
-            :lng="msg.reportData.lng" 
+            :lat="msg.reportData.lat"
+            :lng="msg.reportData.lng"
           />
-          
+
+          <!-- Summary -->
           <div class="resume-box" v-html="msg.reportData.resumen"></div>
 
+          <!-- Score grid -->
           <div class="dimensions-grid">
-            <ScoreCard 
+            <ScoreCard
               v-for="dim in msg.reportData.scores.dimensiones"
               :key="dim.id"
               :dimension="dim.nombre"
@@ -83,8 +94,9 @@ watch(messages, async () => {
             />
           </div>
 
+          <!-- Missing dimensions -->
           <div v-if="msg.reportData.scores.faltantes?.length" class="missing-data">
-            <h4>Faltaron datos para:</h4>
+            <h4>⚠ Dimensiones sin datos</h4>
             <ul>
               <li v-for="f in msg.reportData.scores.faltantes" :key="f.id">
                 <strong>{{ f.id }}:</strong> {{ f.razon }}
@@ -94,86 +106,97 @@ watch(messages, async () => {
         </div>
       </div>
 
+      <!-- Typing indicator -->
       <div v-if="isTyping" class="message-wrapper assistant">
-        <div class="typing-indicator">
-          <span></span><span></span><span></span>
+        <div class="message-bubble">
+          <div class="typing-indicator">
+            <span></span><span></span><span></span>
+          </div>
         </div>
       </div>
     </div>
 
-    <form class="chat-input-area" @submit.prevent="onSubmit">
-      <input 
-        type="text" 
-        v-model="userInput" 
-        placeholder="Ej. Colonia Del Valle Centro..." 
-        :disabled="isTyping"
-        class="main-input"
-      />
-      <button type="submit" :disabled="isTyping || !userInput.trim()" class="send-btn">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="22" y1="2" x2="11" y2="13"></line>
-          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-        </svg>
-      </button>
-    </form>
+    <!-- Input bar -->
+    <div class="input-wrapper">
+      <form class="chat-input-area" @submit.prevent="onSubmit">
+        <input
+          type="text"
+          v-model="userInput"
+          placeholder="Escribe una colonia o dirección de CDMX..."
+          :disabled="isTyping"
+          class="main-input"
+          autocomplete="off"
+        />
+        <button type="submit" :disabled="isTyping || !userInput.trim()" class="send-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20"
+            fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </form>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* ── Shell ── */
 .chat-interface {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #0f172a;
-  color: #f8fafc;
+  background: transparent;
+  color: #1a1a1a;
   font-family: 'Inter', sans-serif;
   overflow: hidden;
 }
 
+/* ── Messages area ── */
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 30px 20px;
+  padding: 36px 20px 20px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 28px;
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
 }
 
+/* ── Empty state ── */
 .empty-state {
   margin: auto;
   text-align: center;
-  max-width: 450px;
-  padding: 40px 20px;
+  max-width: 480px;
+  padding: 32px 20px;
 }
 
-.icon-pulse {
-  width: 60px;
-  height: 60px;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-  border-radius: 50%;
-  margin: 0 auto 24px;
-  animation: pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+.empty-icon {
+  font-size: 3.5rem;
+  margin-bottom: 20px;
+  animation: float 3s ease-in-out infinite;
 }
 
-@keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
-  70% { box-shadow: 0 0 0 20px rgba(59, 130, 246, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
 }
 
 .empty-state h2 {
-  font-size: 1.8rem;
+  font-size: 1.9rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: #111827;
   margin-bottom: 12px;
-  font-weight: 700;
-  background: -webkit-linear-gradient(#f8fafc, #94a3b8);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
+.accent-orange { color: #f97316; }
+
 .empty-state p {
-  color: #94a3b8;
-  line-height: 1.6;
-  margin-bottom: 30px;
+  color: #6b7280;
+  line-height: 1.65;
+  font-size: 0.97rem;
+  margin-bottom: 28px;
 }
 
 .suggestions {
@@ -184,181 +207,246 @@ watch(messages, async () => {
 }
 
 .suggestions button {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  color: #cbd5e1;
-  padding: 8px 16px;
-  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(8px);
+  border: 1px solid #1a1a1a22;
+  color: #374151;
+  padding: 9px 18px;
+  border-radius: 50px;
   cursor: pointer;
+  font-size: 0.9rem;
+  font-family: 'Inter', sans-serif;
   transition: all 0.2s;
+  font-weight: 500;
 }
 
 .suggestions button:hover {
-  background: rgba(255,255,255,0.1);
-  border-color: rgba(255,255,255,0.3);
+  background: #f97316;
+  color: white;
+  border-color: #f97316;
   transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
 }
 
+/* ── Message wrappers ── */
 .message-wrapper {
   display: flex;
   flex-direction: column;
-  max-width: 900px;
+  max-width: 820px;
   width: 100%;
   margin: 0 auto;
 }
+.message-wrapper.user    { align-items: flex-end; }
+.message-wrapper.assistant { align-items: flex-start; }
 
-.message-wrapper.user {
-  align-items: flex-end;
-}
-
-.message-wrapper.assistant {
-  align-items: flex-start;
-}
-
+/* ── Bubbles ── */
 .message-bubble {
-  max-width: 80%;
-  padding: 16px 20px;
-  border-radius: 18px;
-  line-height: 1.5;
-  font-size: 1rem;
+  max-width: 78%;
+  padding: 14px 20px;
+  border-radius: 20px;
+  line-height: 1.55;
+  font-size: 0.97rem;
 }
 
 .user .message-bubble {
-  background: linear-gradient(135deg, #2563eb, #4f46e5);
+  background: #f97316;
   color: white;
   border-bottom-right-radius: 4px;
+  border: 1px solid #ea6c0e;
+  box-shadow: 0 2px 8px rgba(249,115,22,0.25);
 }
 
 .assistant .message-bubble {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  border: 1px solid #1a1a1a1a;
+  color: #1f2937;
   border-bottom-left-radius: 4px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
 
 .content { margin: 0; }
+
+/* ── Typing dots ── */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px;
+}
 
 .typing-indicator span {
   display: inline-block;
   width: 8px;
   height: 8px;
-  background-color: #94a3b8;
+  background-color: #9ca3af;
   border-radius: 50%;
-  margin: 0 2px;
-  animation: bounce 1.4s infinite ease-in-out both;
+  animation: dot-bounce 1.4s infinite ease-in-out both;
 }
-
 .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
 .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
 
-@keyframes bounce {
-  0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1); }
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+  40% { transform: scale(1); opacity: 1; }
 }
 
+/* ── Report block ── */
 .report-container {
   width: 100%;
-  margin-top: 24px;
+  margin-top: 16px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
 }
 
+/* Global score bar */
 .global-score-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 16px 24px;
-  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid #1a1a1a1a;
+  padding: 16px 22px;
+  border-radius: 14px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.05);
 }
+
+.gsb-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gsb-icon { font-size: 1.3rem; }
 
 .global-score-bar h3 {
   margin: 0;
-  font-size: 1.4rem;
-  font-weight: 600;
-  color: #f8fafc;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: -0.02em;
 }
 
 .global-badge {
-  background: linear-gradient(135deg, #10b981, #059669);
-  padding: 8px 16px;
-  border-radius: 30px;
-  color: white;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: baseline;
+  gap: 6px;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  padding: 8px 18px;
+  border-radius: 50px;
+  color: white;
+  border: 1px solid #15803d44;
+  box-shadow: 0 2px 8px rgba(34,197,94,0.25);
 }
 
-.global-badge strong { font-size: 1.2rem; }
-.global-badge span { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+.global-badge strong {
+  font-size: 1.4rem;
+  font-weight: 800;
+}
 
+.badge-sep {
+  font-size: 0.9rem;
+  opacity: 0.75;
+}
+
+.badge-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-left: 4px;
+  border-left: 1px solid rgba(255,255,255,0.4);
+  margin-left: 4px;
+}
+
+/* Summary box */
 .resume-box {
-  background: rgba(255, 255, 255, 0.03);
-  padding: 20px;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(8px);
+  padding: 20px 22px;
   border-radius: 12px;
-  border-left: 4px solid #3b82f6;
-  line-height: 1.6;
-  color: #cbd5e1;
+  border: 1px solid #1a1a1a1a;
+  border-left: 3px solid #f97316;
+  line-height: 1.65;
+  color: #374151;
+  font-size: 0.94rem;
 }
-.resume-box :deep(h3) { margin-top: 0; color: white; font-size: 1.1rem; }
+.resume-box :deep(h3) {
+  margin-top: 0;
+  color: #111827;
+  font-size: 1rem;
+  font-weight: 700;
+}
 
+/* Score cards grid */
 .dimensions-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
 }
 
+/* Missing data */
 .missing-data {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px dashed rgba(239, 68, 68, 0.3);
-  padding: 16px;
-  border-radius: 8px;
-  color: #fca5a5;
-  font-size: 0.9rem;
+  background: rgba(254, 243, 199, 0.7);
+  border: 1px dashed #fbbf24;
+  padding: 14px 18px;
+  border-radius: 10px;
+  color: #92400e;
+  font-size: 0.88rem;
 }
-
-.missing-data h4 { margin: 0 0 10px 0; color: #f87171; }
-.missing-data ul { margin: 0; padding-left: 20px; }
+.missing-data h4 {
+  margin: 0 0 8px 0;
+  color: #b45309;
+  font-weight: 700;
+}
+.missing-data ul { margin: 0; padding-left: 18px; }
 .missing-data li { margin-bottom: 4px; }
 
+/* ── Input bar ── */
+.input-wrapper {
+  padding: 16px 20px 20px;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid #1a1a1a15;
+}
+
 .chat-input-area {
-  padding: 20px;
-  background: #0f172a;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  max-width: 900px;
-  width: 100%;
+  max-width: 820px;
   margin: 0 auto;
 }
 
 .main-input {
   flex: 1;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 16px 24px;
-  border-radius: 30px;
-  color: white;
-  font-size: 1rem;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #1a1a1a22;
+  padding: 14px 22px;
+  border-radius: 50px;
+  color: #111827;
+  font-size: 0.97rem;
+  font-family: 'Inter', sans-serif;
   transition: all 0.2s;
   outline: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
 
+.main-input::placeholder { color: #9ca3af; }
+
 .main-input:focus {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  border-color: #f97316;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.12);
 }
 
 .send-btn {
-  background: #3b82f6;
+  background: #f97316;
   color: white;
-  border: none;
-  width: 52px;
-  height: 52px;
+  border: 1px solid #ea6c0e;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -366,16 +454,20 @@ watch(messages, async () => {
   cursor: pointer;
   transition: all 0.2s;
   flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(249,115,22,0.3);
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #2563eb;
-  transform: scale(1.05);
+  background: #ea6c0e;
+  transform: scale(1.06);
+  box-shadow: 0 4px 14px rgba(249,115,22,0.4);
 }
 
 .send-btn:disabled {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.3);
+  background: #e5e7eb;
+  color: #9ca3af;
+  border-color: #d1d5db;
   cursor: not-allowed;
+  box-shadow: none;
 }
 </style>
