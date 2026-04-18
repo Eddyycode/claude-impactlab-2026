@@ -138,23 +138,30 @@ export function useChat() {
         });
       } else {
         // Modo real API Gateway!
-        const URL = import.meta.env.VITE_GATEWAY_URL || 'http://localhost:8000';
-        const res = await axios.post(`${URL}/chat`, {
+        const BASE_URL = import.meta.env.VITE_GATEWAY_URL || 'http://localhost:8000';
+        const res = await axios.post(`${BASE_URL}/chat`, {
           messages: messages.value.map(m => ({ role: m.role, content: m.content })),
           preferences: preferences.value
+        }, {
+          timeout: 120000,   // 2 min — Claude tool-use loop puede tardar ~75s
+          headers: { 'Content-Type': 'application/json' }
         });
         
-        // Supongamos que en la respuesta real, el servidor devuelve
-        // msg puro y un field _report_ (en el contract deben decidirlo, pero asumiremos data combinada)
         messages.value.push({
           role: 'assistant',
           content: res.data.content || "Reporte generado.",
-          reportData: res.data.reportData
+          reportData: res.data.reportData || null
         });
       }
     } catch (e) {
       console.error(e);
-      messages.value.push({ role: 'assistant', content: "Hubo un error al contactar al servidor." });
+      const isTimeout = e.code === 'ECONNABORTED' || e.message?.includes('timeout');
+      messages.value.push({
+        role: 'assistant',
+        content: isTimeout
+          ? '⏳ La consulta tardó más de lo esperado. El análisis de Claude puede tomar hasta 90 segundos — intenta de nuevo.'
+          : '⚠️ Hubo un error al contactar al servidor. Verifica que el gateway esté corriendo en localhost:8000.'
+      });
     } finally {
       isTyping.value = false;
     }
