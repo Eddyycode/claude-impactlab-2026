@@ -734,7 +734,8 @@ cambiarlo, avisa por chat, Dev B hace `git pull` y actualiza mocks.
 
 - Demo end-to-end en vivo: Dev B pregunta en Vue, respuesta trae 7+ dimensiones
   con scores 1–10 + reporte HTML + mapa con marcador.
-- Si alguna tool no funciona: **se corta**. 5 dimensiones sólidas > 9 flojas.
+- Si algun
+a tool no funciona: **se corta**. 5 dimensiones sólidas > 9 flojas.
 - Decidir si hay tiempo para el wow factor (capas de mapa, pesos personalizables UI).
 
 #### Hora 4:15 → 5:00 — Pulir
