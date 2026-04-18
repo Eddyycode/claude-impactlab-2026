@@ -14,8 +14,8 @@ import ChatInterface from './components/ChatInterface.vue';
     <!-- Header -->
     <header class="top-bar">
       <div class="logo">
-        <span class="logo-icon">🏙️</span>
-        <span class="logo-name">Colon<span class="logo-ia">IA</span></span>
+        <img src="/logo.png" alt="ColonIA Logo" class="logo-img" />
+        <span class="logo-name">colon<span class="logo-ia">IA</span></span>
       </div>
       <p class="logo-tagline">Inteligencia para elegir dónde vivir en CDMX</p>
     </header>
@@ -60,8 +60,11 @@ import ChatInterface from './components/ChatInterface.vue';
   color: #1a1a1a;
 }
 
-.logo-icon {
-  font-size: 1.4rem;
+.logo-img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .logo-ia {
