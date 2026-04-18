@@ -21,6 +21,63 @@ watch(messages, async () => {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
   }
 }, { deep: true });
+
+// ── Format plain text / markdown to HTML ──────────────────────────────────
+const formatContent = (raw) => {
+  if (!raw) return '';
+  let text = raw;
+
+  // Headers
+  text = text.replace(/^### (.+)$/gm, '<h4 class="fc-h3">$1</h4>');
+  text = text.replace(/^## (.+)$/gm, '<h3 class="fc-h2">$1</h3>');
+  text = text.replace(/^# (.+)$/gm, '<h2 class="fc-h1">$1</h2>');
+
+  // Bold + italic
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+  // Source badges — tag with color pills
+  text = text.replace(/\[(FGJ CDMX|SIMAT|SACMEX|CKAN|GTFS|DENUE|Atlas Riesgo CDMX|Plataforma CDMX|GBFS)\]/g,
+    '<span class="src-badge gov">🏛 $1</span>');
+  text = text.replace(/\[(Tavily|Web|Fuente web|chilango\.com|milenio\.com|eluniversal\.com\.mx|excelsior\.com\.mx|expansion\.mx|animalpolitico\.com)\]/g,
+    '<span class="src-badge web">🌐 $1</span>');
+
+  // Horizontal rule
+  text = text.replace(/^---+$/gm, '<hr class="fc-hr">');
+
+  // Markdown tables → HTML tables
+  text = text.replace(/\|(.+)\|\n\|[-| :]+\|\n((\|.+\|\n?)+)/gm, (match) => {
+    const rows = match.trim().split('\n').filter(r => !/^[\|\s\-:]+$/.test(r));
+    const [header, ...body] = rows;
+    const th = header.split('|').filter(c => c.trim()).map(c => `<th>${c.trim()}</th>`).join('');
+    const trs = body.map(r =>
+      '<tr>' + r.split('|').filter(c => c.trim() !== undefined && r.includes('|')).slice(1,-1).map(c => `<td>${c.trim()}</td>`).join('') + '</tr>'
+    ).join('');
+    return `<table class="fc-table"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>`;
+  });
+
+  // Bullet lists
+  text = text.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+  text = text.replace(/(<li>[\s\S]+?<\/li>)(?=\n[^<]|$)/g, '<ul class="fc-list">$1</ul>');
+
+  // Paragraphs (blank line separated)
+  text = text.replace(/\n\n+/g, '</p><p class="fc-p">');
+  text = '<p class="fc-p">' + text + '</p>';
+
+  // Clean up empty paragraphs and fix nesting
+  text = text.replace(/<p class="fc-p"><\/p>/g, '');
+  text = text.replace(/<p class="fc-p">(<h[2-4])/g, '$1');
+  text = text.replace(/(<\/h[2-4]>)<\/p>/g, '$1');
+  text = text.replace(/<p class="fc-p">(<ul)/g, '$1');
+  text = text.replace(/(<\/ul>)<\/p>/g, '$1');
+  text = text.replace(/<p class="fc-p">(<hr)/g, '$1');
+  text = text.replace(/(<hr[^>]*>)<\/p>/g, '$1');
+  text = text.replace(/<p class="fc-p">(<table)/g, '$1');
+  text = text.replace(/(<\/table>)<\/p>/g, '$1');
+  text = text.replace(/\n/g, ' ');
+
+  return text;
+};
 </script>
 
 <template>
@@ -50,7 +107,7 @@ watch(messages, async () => {
         :class="msg.role"
       >
         <div class="message-bubble">
-          <p class="content" v-html="msg.content"></p>
+          <div class="formatted-content" v-html="formatContent(msg.content)"></div>
         </div>
 
         <!-- Report block -->
@@ -266,6 +323,115 @@ watch(messages, async () => {
 }
 
 .content { margin: 0; }
+
+/* ── Formatted Content Styles ─────────────── */
+.formatted-content { line-height: 1.6; }
+
+.formatted-content :deep(.fc-p) {
+  margin: 0 0 10px 0;
+  color: inherit;
+}
+
+.formatted-content :deep(.fc-h1),
+.formatted-content :deep(.fc-h2) {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #111827;
+  margin: 14px 0 6px 0;
+  letter-spacing: -0.02em;
+}
+
+.formatted-content :deep(.fc-h3) {
+  font-size: 0.97rem;
+  font-weight: 700;
+  color: #374151;
+  margin: 10px 0 4px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.formatted-content :deep(.fc-hr) {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 14px 0;
+}
+
+.formatted-content :deep(.fc-list) {
+  padding-left: 18px;
+  margin: 6px 0;
+}
+
+.formatted-content :deep(.fc-list li) {
+  margin-bottom: 4px;
+  color: #374151;
+}
+
+/* Source badges */
+.formatted-content :deep(.src-badge) {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  vertical-align: middle;
+  margin: 0 2px;
+}
+
+.formatted-content :deep(.src-badge.gov) {
+  background: rgba(34, 197, 94, 0.12);
+  color: #15803d;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.formatted-content :deep(.src-badge.web) {
+  background: rgba(249, 115, 22, 0.1);
+  color: #c2410c;
+  border: 1px solid rgba(249, 115, 22, 0.3);
+}
+
+/* Inline tables */
+.formatted-content :deep(.fc-table) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin: 10px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.formatted-content :deep(.fc-table th) {
+  background: #f9fafb;
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 700;
+  color: #374151;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.formatted-content :deep(.fc-table td) {
+  padding: 7px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #4b5563;
+}
+
+.formatted-content :deep(.fc-table tr:last-child td) {
+  border-bottom: none;
+}
+
+.formatted-content :deep(strong) {
+  font-weight: 700;
+  color: #111827;
+}
+
+.formatted-content :deep(em) {
+  font-style: italic;
+  color: #6b7280;
+}
 
 /* ── Typing dots ── */
 .typing-indicator {

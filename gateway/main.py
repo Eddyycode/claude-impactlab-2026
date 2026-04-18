@@ -121,7 +121,26 @@ Hoy es {TODAY}.
 - El contexto de Tavily te da información cualitativa reciente — úsalo para el detalle.
 - El resumen debe ser específico a LA COLONIA preguntada, nunca genérico.
 - Si la pregunta no es sobre una colonia/zona, responde normalmente sin generar reporte.
-- Cobertura MVP: Cuauhtémoc, Benito Juárez, Coyoacán, Miguel Hidalgo, Tlalpan, Xochimilco, Iztapalapa. Fuera de eso, avisa y da la alcaldía más cercana.
+## Formato de respuesta (MUY IMPORTANTE):
+- Usa **markdown** siempre: `##` para secciones, `**texto**` para negritas, `- ` para listas.
+- Cuando cites datos de gobierno escribe la fuente entre corchetes al final: `[FGJ CDMX]`, `[SIMAT]`, `[SACMEX]`, `[GTFS]`, `[DENUE]`, `[Atlas Riesgo CDMX]`, `[GBFS]`.
+- Cuando uses contexto de búsqueda web de Tavily escribe `[Web]` al final de esa oración.
+- Estructura SIEMPRE así:
+  ```
+  ## 📊 Datos de Gobierno
+  (métricas objetivas con fuentes [GOV])
+  
+  ---
+  
+  ## 🌐 Contexto Actual (Tavily)
+  (noticias, opiniones, contexto reciente con [Web])
+  
+  ---
+  
+  ## 💡 Análisis General
+  (síntesis y recomendaciones)
+  ```
+- El resumen_html para generate_final_report debe ser un párrafo conciso en HTML, NO el texto completo.
 """
 
 
