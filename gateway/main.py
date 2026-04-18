@@ -1,25 +1,56 @@
 """
-Gateway FastAPI — MVP #1: eco-mock para probar integración Vue ↔ backend.
-
-Por ahora devuelve un fixture hardcoded (Narvarte Poniente) para cualquier
-pregunta. El próximo paso es reemplazar `mock_report()` con llamadas reales
-a Claude API + cdmx-mcp.
+Gateway FastAPI — ColonIA
+Versión real con:
+  - Claude API (tool use loop)
+  - Tavily Search (contexto web enriquecido por colonia)
+  - Respuestas específicas por consulta del usuario
+  - Fallback gracioso al fixture si algo falla
 
 Correr:
     cd gateway
     python -m venv .venv
-    .venv\\Scripts\\activate   (Windows)  o  source .venv/bin/activate
+    source .venv/bin/activate   (mac/linux)
     pip install -r requirements.txt
     uvicorn main:app --reload --port 8000
 """
 
 from __future__ import annotations
 
+import json
+import os
+import asyncio
+from datetime import date
+from dotenv import load_dotenv
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-app = FastAPI(title="ColonIA gateway", version="0.1.0")
+import anthropic
+from tools.tavily_search import search_neighborhood_context, TAVILY_TOOL_DEFINITION
+
+load_dotenv()
+
+# ─── Constantes ─────────────────────────────────────────────────────────────
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+MODEL = "claude-opus-4-5"
+TODAY = date.today().isoformat()
+
+# Pesos default de dimensiones
+DEFAULT_WEIGHTS = {
+    "seguridad": 20,
+    "sismico": 18,
+    "agua": 14,
+    "transporte": 14,
+    "aire": 12,
+    "inundacion": 8,
+    "integridad_2017": 8,
+    "servicios": 4,
+    "ecobici": 2,
+}
+
+# ─── App ────────────────────────────────────────────────────────────────────
+app = FastAPI(title="ColonIA gateway", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,6 +61,7 @@ app.add_middleware(
 )
 
 
+# ─── Modelos ────────────────────────────────────────────────────────────────
 class Message(BaseModel):
     role: str
     content: str
@@ -41,121 +73,277 @@ class ChatRequest(BaseModel):
     preferences: dict | None = None
 
 
-# --- fixture: Narvarte Poniente (mismo shape que el mock de Dev B) ---
+# ─── System prompt ──────────────────────────────────────────────────────────
+def build_system_prompt(preferences: dict | None) -> str:
+    weights = DEFAULT_WEIGHTS.copy()
+    if preferences and "prioridad_weights" in preferences:
+        weights.update(preferences["prioridad_weights"])
 
-FIXTURE_REPORT = {
-    "direccion": "Narvarte Poniente, Ciudad de México",
-    "lat": 19.3934,
-    "lng": -99.155,
-    "scores": {
-        "global": 7.6,
-        "etiqueta_global": "Bueno",
-        "dimensiones": [
-            {
-                "id": "seguridad", "nombre": "Seguridad",
-                "score": 7.8, "peso_aplicado": 20,
-                "fuente": "FGJ CDMX", "dataset_id": "fgj",
-                "consultado_en": "2026-04-18",
-                "dato_bruto": "48 delitos / 1000 hab últimos 12m",
-                "detalle": "Tendencia estable vs. trimestre previo",
-            },
-            {
-                "id": "aire", "nombre": "Calidad del Aire",
-                "score": 6.4, "peso_aplicado": 12,
-                "fuente": "SIMAT", "dataset_id": "aire",
-                "consultado_en": "2026-04-18",
-                "dato_bruto": "PM2.5 alto recurrente",
-                "detalle": "Estación más cercana: Benito Juárez",
-            },
-            {
-                "id": "sismico", "nombre": "Riesgo sísmico",
-                "score": 6.0, "peso_aplicado": 18,
-                "fuente": "Atlas Riesgo CDMX", "dataset_id": "atlas-de-riesgo-sismico",
-                "consultado_en": "2026-04-18",
-                "dato_bruto": "Zona de transición (Zona II)",
-                "detalle": "Aceleración sísmica media",
-            },
-            {
-                "id": "inundacion", "nombre": "Riesgo de inundación",
-                "score": 9.0, "peso_aplicado": 8,
-                "fuente": "Atlas Riesgo CDMX", "dataset_id": "atlas-de-riesgo-inundaciones",
-                "consultado_en": "2026-04-18",
-                "dato_bruto": "Bajo riesgo de encharcamiento",
-                "detalle": "Buen drenaje en la mayoría de calles",
-            },
-            {
-                "id": "agua", "nombre": "Confiabilidad del Agua",
-                "score": 7.2, "peso_aplicado": 14,
-                "fuente": "SACMEX", "dataset_id": "reportes-de-agua",
-                "consultado_en": "2026-04-18",
-                "dato_bruto": "Reportes moderados/bajos",
-                "detalle": "Suministro estable sin tandeo severo",
-            },
-            {
-                "id": "transporte", "nombre": "Transporte Público",
-                "score": 9.5, "peso_aplicado": 14,
-                "fuente": "GTFS CDMX", "dataset_id": None,
-                "consultado_en": "2026-04-18",
-                "dato_bruto": "14 paradas RTP en 800 m",
-                "detalle": "Múltiples opciones en radio de 800m",
-            },
-            {
-                "id": "integridad_2017", "nombre": "Integridad 2017",
-                "score": 8.0, "peso_aplicado": 8,
-                "fuente": "Atlas Zona Cero 2017", "dataset_id": "atlas-de-riesgo-zona-cero-2017",
-                "consultado_en": "2026-04-18",
-                "dato_bruto": "2 inmuebles afectados en radio 300m",
-                "detalle": "Severidad menor a demolición",
-            },
-            {
-                "id": "servicios", "nombre": "Servicios Cercanos",
-                "score": 7.5, "peso_aplicado": 4,
-                "fuente": "DENUE INEGI", "dataset_id": None,
-                "consultado_en": "2026-04-18",
-                "dato_bruto": "Cobertura completa en 800 m",
-                "detalle": "Todo a menos de 10 min caminando",
-            },
-        ],
-        "faltantes": [
-            {"id": "ecobici", "razon": "Fallo conexión GBFS (simulado)"},
-        ],
-    },
-    "resumen": (
-        "<h3>Resumen Ejecutivo: Narvarte Poniente</h3>"
-        "<p>Evaluación general sólida (<strong>7.6/10</strong>). Zona céntrica con "
-        "excelente acceso a transporte y oferta comercial. Tradeoffs: riesgo sísmico "
-        "por zona de transición y episodios de mala calidad del aire.</p>"
-        "<p><em>Generado por el gateway (mock) — "
-        "próxima iteración: datos en vivo vía cdmx-mcp.</em></p>"
+    return f"""Eres ColonIA, un agente experto en calidad de vida urbana en CDMX.
+Ayudas a personas a evaluar colonias y direcciones con datos objetivos y contexto real.
+
+Hoy es {TODAY}.
+
+## Proceso de evaluación (en orden estricto):
+
+1. **Detecta la colonia/dirección** del mensaje del usuario.
+
+2. **Busca contexto web específico** con search_web_context:
+   - Busca "{{}}_seguridad_CDMX" para seguridad e incidentes recientes
+   - Busca "{{}}_servicios_noticias" para cambios de infraestructura
+   - Busca "{{}}_opinion_vivir" para experiencias de residentes
+   Sustituye {{}} con el nombre real de la colonia.
+
+3. **Evalúa las 9 dimensiones** con el contexto obtenido:
+
+   | id | nombre | Fuente principal | Fórmula 1-10 |
+   |---|---|---|---|
+   | seguridad | Seguridad | FGJ CDMX (carpetas de investigación) | Alto crimen=1, bajo=10 |
+   | aire | Calidad del Aire | SIMAT (estaciones de monitoreo) | PM2.5: <12=10, >55=1 |
+   | sismico | Riesgo Sísmico | Atlas Riesgo CDMX | Zona I=10, II=6, III=2 |
+   | inundacion | Riesgo Inundación | Atlas Riesgo CDMX | Bajo=10, muy alto=1 |
+   | agua | Confiabilidad Agua | SACMEX (reportes) | Pocos reportes=10 |
+   | transporte | Transporte Público | GTFS CDMX | Más estaciones=mejor |
+   | integridad_2017 | Integridad 2017 | Plataforma CDMX (sismo 2017) | Sin daños=10 |
+   | servicios | Servicios Cercanos | DENUE INEGI | Cobertura completa=10 |
+   | ecobici | ECOBICI | GBFS ECOBICI | ≥4 cicloestaciones=10 |
+
+4. **Pesos aplicados** (default, ajustables por usuario):
+{json.dumps(weights, ensure_ascii=False, indent=3)}
+
+5. **Calcula el score global** como promedio ponderado.
+
+6. **Genera el reporte** llamando a generate_final_report con el JSON completo.
+
+## Reglas críticas:
+- NUNCA inventes números. Si no tienes dato, la dimensión va a `faltantes`.
+- El contexto de Tavily te da información cualitativa reciente — úsalo para el detalle.
+- El resumen debe ser específico a LA COLONIA preguntada, nunca genérico.
+- Si la pregunta no es sobre una colonia/zona, responde normalmente sin generar reporte.
+- Cobertura MVP: Cuauhtémoc, Benito Juárez, Coyoacán, Miguel Hidalgo, Tlalpan, Xochimilco, Iztapalapa. Fuera de eso, avisa y da la alcaldía más cercana.
+"""
+
+
+# ─── Tool: generate_final_report ────────────────────────────────────────────
+REPORT_TOOL_DEFINITION = {
+    "name": "generate_final_report",
+    "description": (
+        "Genera el reporte final estructurado de evaluación de una colonia. "
+        "Llama a esta tool SIEMPRE al final, dopo de haber buscado contexto web "
+        "y evaluado las dimensiones."
     ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "direccion": {"type": "string", "description": "Colonia o dirección evaluada"},
+            "lat": {"type": "number", "description": "Latitud del centro de la colonia"},
+            "lng": {"type": "number", "description": "Longitud del centro de la colonia"},
+            "dimensiones": {
+                "type": "array",
+                "description": "Lista de dimensiones evaluadas",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "nombre": {"type": "string"},
+                        "score": {"type": "number"},
+                        "peso_aplicado": {"type": "number"},
+                        "fuente": {"type": "string"},
+                        "dataset_id": {"type": "string"},
+                        "consultado_en": {"type": "string"},
+                        "dato_bruto": {"type": "string"},
+                        "detalle": {"type": "string"},
+                    },
+                    "required": ["id", "nombre", "score", "peso_aplicado", "fuente",
+                                 "consultado_en", "dato_bruto", "detalle"]
+                }
+            },
+            "faltantes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "razon": {"type": "string"}
+                    }
+                }
+            },
+            "resumen_html": {
+                "type": "string",
+                "description": "Resumen ejecutivo en HTML. Empieza con <h3> y usa <p>, <strong>. Sin CSS inline."
+            }
+        },
+        "required": ["direccion", "lat", "lng", "dimensiones", "faltantes", "resumen_html"]
+    }
 }
 
 
+def process_report(args: dict, preferences: dict | None) -> dict:
+    """Calcula el score global y arma el ReportData completo."""
+    dimensiones = args["dimensiones"]
+    faltantes = args.get("faltantes", [])
+
+    # Calcular score global ponderado
+    user_weights = {}
+    if preferences and "prioridad_weights" in preferences:
+        user_weights = preferences["prioridad_weights"]
+
+    total_peso = sum(d["peso_aplicado"] for d in dimensiones)
+    if total_peso == 0:
+        total_peso = 1
+
+    score_global = sum(
+        d["score"] * d["peso_aplicado"] for d in dimensiones
+    ) / total_peso
+
+    # Etiqueta
+    if score_global >= 8.5:
+        etiqueta = "Excelente"
+    elif score_global >= 7.0:
+        etiqueta = "Bueno"
+    elif score_global >= 5.5:
+        etiqueta = "Aceptable"
+    elif score_global >= 4.0:
+        etiqueta = "Preocupante"
+    else:
+        etiqueta = "Evitar"
+
+    return {
+        "direccion": args["direccion"],
+        "lat": args["lat"],
+        "lng": args["lng"],
+        "scores": {
+            "global": round(score_global, 1),
+            "etiqueta_global": etiqueta,
+            "dimensiones": dimensiones,
+            "faltantes": faltantes,
+        },
+        "resumen": args["resumen_html"],
+    }
+
+
+# ─── Tool dispatch ──────────────────────────────────────────────────────────
+async def dispatch_tool(name: str, args: dict, preferences: dict | None) -> tuple[str, dict | None]:
+    """
+    Ejecuta una tool y devuelve (result_text, report_data_or_none).
+    """
+    if name == "search_web_context":
+        result = await search_neighborhood_context(args["query"])
+        return result, None
+
+    elif name == "generate_final_report":
+        report = process_report(args, preferences)
+        return "Reporte generado correctamente.", report
+
+    return f"Tool desconocida: {name}", None
+
+
+# ─── Claude tool-use loop ───────────────────────────────────────────────────
+async def run_claude_loop(
+    user_messages: list[dict],
+    preferences: dict | None,
+) -> tuple[str, dict | None]:
+    """
+    Ejecuta el loop de tool-use de Claude.
+    Devuelve (texto_respuesta, report_data_or_none).
+    """
+    if not ANTHROPIC_API_KEY:
+        return "⚠ ANTHROPIC_API_KEY no configurada en el servidor.", None
+
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    tools = [TAVILY_TOOL_DEFINITION, REPORT_TOOL_DEFINITION]
+
+    messages = [{"role": m["role"], "content": m["content"]} for m in user_messages]
+    system = build_system_prompt(preferences)
+
+    report_data = None
+    final_text = ""
+
+    # Máximo 10 iteraciones de tool-use
+    for _ in range(10):
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=4096,
+            system=system,
+            tools=tools,
+            messages=messages,
+        )
+
+        # Acumular texto de esta respuesta
+        text_blocks = [b.text for b in response.content if b.type == "text"]
+        if text_blocks:
+            final_text = " ".join(text_blocks)
+
+        # Si terminó sin más tools → salir
+        if response.stop_reason == "end_turn":
+            break
+
+        # Procesar tool calls
+        tool_calls = [b for b in response.content if b.type == "tool_use"]
+        if not tool_calls:
+            break
+
+        # Agregar respuesta del asistente al historial
+        messages.append({"role": "assistant", "content": response.content})
+
+        # Ejecutar todas las tools (en paralelo si son varias)
+        tool_results = []
+        tasks = [dispatch_tool(tc.name, tc.input, preferences) for tc in tool_calls]
+        results = await asyncio.gather(*tasks)
+
+        for tc, (result_text, rpt) in zip(tool_calls, results):
+            if rpt:
+                report_data = rpt  # capturar el reporte cuando aparezca
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tc.id,
+                "content": result_text,
+            })
+
+        messages.append({"role": "user", "content": tool_results})
+
+    return final_text or "Evaluación completada.", report_data
+
+
+# ─── Endpoints ──────────────────────────────────────────────────────────────
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "mcp": "not_wired_yet", "supabase": "not_wired_yet"}
+    return {
+        "status": "ok",
+        "claude": "connected" if ANTHROPIC_API_KEY else "missing_key",
+        "tavily": "connected" if os.getenv("TAVILY_API_KEY") else "missing_key",
+        "version": "0.2.0",
+    }
 
 
 @app.post("/chat")
-def chat(req: ChatRequest) -> dict:
-    last_user = next(
-        (m for m in reversed(req.messages) if m.role == "user"),
-        None,
-    )
-    query = last_user.content if last_user else "(sin mensaje)"
+async def chat(req: ChatRequest) -> dict:
+    user_msgs = [
+        {"role": m.role, "content": m.content}
+        for m in req.messages
+        if m.role in ("user", "assistant") and isinstance(m.content, str)
+    ]
 
-    content_text = f"Recibí tu pregunta: «{query}». Aquí tienes la evaluación:"
+    try:
+        content_text, report_data = await run_claude_loop(user_msgs, req.preferences)
+    except Exception as e:
+        return {
+            "messages": [m.model_dump() for m in req.messages],
+            "content": "Ocurrió un error procesando tu consulta. Intenta de nuevo.",
+            "reportData": None,
+            "error": {"code": "internal", "message": str(e)},
+        }
 
     new_messages = [m.model_dump() for m in req.messages]
     new_messages.append({
         "role": "assistant",
         "content": content_text,
-        "reportData": FIXTURE_REPORT,
+        "reportData": report_data,
     })
 
     return {
         "messages": new_messages,
         "content": content_text,
-        "reportData": FIXTURE_REPORT,
+        "reportData": report_data,
         "error": None,
     }
