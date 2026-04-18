@@ -1,0 +1,3 @@
+[submodule "mcp cesar"]
+	path = mcp cesar
+	url = https://github.com/devcsar/cdmx-mcp.git
