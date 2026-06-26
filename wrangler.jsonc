@@ -1,0 +1,1 @@
+{"name":"colonia","compatibility_date":"2025-06-01","build":{"command":"npm install && npm run build","cwd":"frontend"},"assets":{"directory":"./frontend/dist","not_found_handling":"single-page-application"}}
